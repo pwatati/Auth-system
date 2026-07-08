@@ -6,7 +6,7 @@ public class RegisterRequest {
     private String password;
     private String email;
 
-    // Constructors
+
     public RegisterRequest() {}
 
     public RegisterRequest(Long idNumber, String name, String password, String email) {
@@ -16,7 +16,7 @@ public class RegisterRequest {
         this.email = email;
     }
 
-    // Getters and Setters
+
     public Long getIdNumber() { return idNumber; }
     public void setIdNumber(Long idNumber) { this.idNumber = idNumber; }
 
