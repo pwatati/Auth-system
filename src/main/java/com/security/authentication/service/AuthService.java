@@ -1,39 +1,47 @@
 package com.security.authentication.service;
 
-import com.security.authentication.dto.RegisterRequest;
-import com.security.authentication.model.User;
-import com.security.authentication.model.VerificationToken;
-import com.security.authentication.repository.UserRepository;
-import com.security.authentication.repository.VerificationTokenRepository;
+import com.security.authentication.dto.*;
+import com.security.authentication.model.*;
+import com.security.authentication.repository.*;
+import com.security.authentication.config.Security.JwtUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.security.authentication.dto.LoginRequest;
 import org.springframework.stereotype.Service;
 import jakarta.transaction.Transactional;
+
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
-import com.security.authentication.model.LoginCode;
-import com.security.authentication.repository.LoginCodeRepository;
 import java.util.Random;
 
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final VerificationTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final LoginCodeRepository loginCodeRepository; // Added for 2FA tracking
+    private final LoginCodeRepository loginCodeRepository;
+    private final PasswordResetCodeRepository resetCodeRepository;
+    private final JwtUtil jwtUtil;
 
     public AuthService(UserRepository userRepository,
+                       RoleRepository roleRepository,
                        VerificationTokenRepository tokenRepository,
                        PasswordEncoder passwordEncoder,
-                       LoginCodeRepository loginCodeRepository) {
+                       LoginCodeRepository loginCodeRepository,
+                       PasswordResetCodeRepository resetCodeRepository,
+                       JwtUtil jwtUtil) {
         this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.loginCodeRepository = loginCodeRepository;
+        this.resetCodeRepository = resetCodeRepository;
+        this.jwtUtil = jwtUtil;
     }
 
-    public String registerUser(RegisterRequest request) {
+    public RegisterResponse registerUser(RegisterRequest request) {
         if (userRepository.existsById(request.getIdNumber())) {
             throw new RuntimeException("User with this ID Number already exists!");
         }
@@ -44,16 +52,28 @@ public class AuthService {
         newUser.setEmail(request.getEmail());
         newUser.setPassword(passwordEncoder.encode(request.getPassword()));
 
+        // Assign default ROLE_USER to newly registered users
+        Role userRole = roleRepository.findByName(ERole.ROLE_USER)
+                .orElseThrow(() -> new RuntimeException("Error: Default Role ROLE_USER is not initialized in DB."));
+        Set<Role> roles = new HashSet<>();
+        roles.add(userRole);
+        newUser.setRoles(roles);
+
         userRepository.save(newUser);
 
         String tokenValue = UUID.randomUUID().toString();
         VerificationToken verificationToken = new VerificationToken(tokenValue, newUser);
         tokenRepository.save(verificationToken);
 
-
         String verificationLink = "http://localhost:8080/api/auth/verify?token=" + tokenValue;
+        System.out.println(">>> ACTIVATION LINK DISPATCHED: " + verificationLink);
 
-        return "Registration successful! Click this link to activate your account: " + verificationLink;
+        return new RegisterResponse(
+                "Registration successful! Please check your email to activate your account.",
+                newUser.getIdNumber(),
+                newUser.getName(),
+                newUser.getEmail()
+        );
     }
 
     public String verifyUserToken(String tokenValue) {
@@ -70,61 +90,95 @@ public class AuthService {
         userRepository.save(user);
 
         tokenRepository.delete(verificationToken);
-
         return "Account verified and activated successfully! You can now log in.";
     }
 
     @Transactional
-    public String loginUser(LoginRequest request) {
-        // 1. Validate credentials
+    public LoginInitialResponse loginUser(LoginRequest request) {
         User user = userRepository.findById(request.getIdNumber())
                 .orElseThrow(() -> new RuntimeException("Invalid ID Number or Password!"));
 
         if (!user.isEnabled()) {
-            throw new RuntimeException("Account is not verified yet! Please check your verification link.");
+            throw new RuntimeException("Account is not verified yet! Please check your verification link in your email.");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid ID Number or Password!");
         }
 
-
         loginCodeRepository.deleteByIdNumber(user.getIdNumber());
-
 
         String sixDigitCode = generateSixDigitCode();
         LoginCode loginCode = new LoginCode(sixDigitCode, user.getIdNumber());
         loginCodeRepository.save(loginCode);
 
-
         System.out.println(">>> 2FA CODE SENT TO EMAIL [" + user.getEmail() + "]: " + sixDigitCode);
 
-        return " Verified! A 6-digit login verification code has been dispatched to your email (" + user.getEmail() + ").";
+        return new LoginInitialResponse(
+                "Credentials verified! A 6-digit verification code has been generated.",
+                user.getIdNumber(),
+                user.getEmail()
+        );
     }
 
     @Transactional
-    public String verifyLoginCode(Long idNumber, String submittedCode) {
-
+    public LoginSuccessResponse verifyLoginCode(Long idNumber, String submittedCode) {
         LoginCode loginCode = loginCodeRepository.findByIdNumberAndCode(idNumber, submittedCode)
                 .orElseThrow(() -> new RuntimeException("Invalid verification code! Please try again."));
 
-
         if (loginCode.getExpiryDate().isBefore(LocalDateTime.now())) {
             loginCodeRepository.delete(loginCode);
-            throw new RuntimeException("This verification code has expired . Please log in again.");
+            throw new RuntimeException("This verification code has expired. Please log in again.");
         }
 
-
         loginCodeRepository.delete(loginCode);
+        User user = userRepository.findById(idNumber)
+                .orElseThrow(() -> new RuntimeException("User not found!"));
 
+        // Pass user.getRoles() to match Set<Role> expected by JwtUtil
+        String token = jwtUtil.generateToken(user.getIdNumber(), user.getName(), user.getRoles());
+        UserDetails userDto = new UserDetails(user.getIdNumber(), user.getName(), user.getEmail(), user.getRoles());
 
-        User user = userRepository.findById(idNumber).get();
-        return " Verification Successful! Welcome " + user.getName() + ".";
+        return new LoginSuccessResponse("Verification successful. Welcome!", token, userDto);
+    }
+
+    @Transactional
+    public String initiatePasswordReset(ForgotPasswordRequest request) {
+        User user = userRepository.findById(request.getIdNumber())
+                .orElseThrow(() -> new RuntimeException("No account registered with this ID Number!"));
+
+        resetCodeRepository.deleteByIdNumber(user.getIdNumber());
+
+        String resetCodeStr = generateSixDigitCode();
+        PasswordResetCode resetCodeEntity = new PasswordResetCode(resetCodeStr, user.getIdNumber());
+        resetCodeRepository.save(resetCodeEntity);
+
+        System.out.println(">>> PASSWORD RESET CODE SENT TO [" + user.getEmail() + "]: " + resetCodeStr);
+        return "A password reset verification code has been dispatched to your email (" + user.getEmail() + ").";
+    }
+
+    @Transactional
+    public String completePasswordReset(ResetPasswordRequest request) {
+        PasswordResetCode resetCode = resetCodeRepository.findByIdNumberAndCode(request.getIdNumber(), request.getCode())
+                .orElseThrow(() -> new RuntimeException("Invalid password reset code! Verification failed."));
+
+        if (resetCode.getExpiryDate().isBefore(LocalDateTime.now())) {
+            resetCodeRepository.delete(resetCode);
+            throw new RuntimeException("This reset code has expired. Please try again.");
+        }
+
+        resetCodeRepository.delete(resetCode);
+
+        User user = userRepository.findById(request.getIdNumber())
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        return "Verification successful. Password reset successful!";
     }
 
     private String generateSixDigitCode() {
         Random random = new Random();
-        int number = 100000 + random.nextInt(900000);
-        return String.valueOf(number);
+        return String.valueOf(100000 + random.nextInt(900000));
     }
 }

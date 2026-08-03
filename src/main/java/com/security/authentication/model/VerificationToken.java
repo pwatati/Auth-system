@@ -13,7 +13,7 @@ public class VerificationToken {
 
     private String token;
 
-    @OneToOne
+    @ManyToOne
     @JoinColumn(name = "user_id", referencedColumnName = "idNumber")
     private User user;
 

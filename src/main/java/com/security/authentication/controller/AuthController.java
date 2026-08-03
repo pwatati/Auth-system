@@ -1,11 +1,9 @@
 package com.security.authentication.controller;
 
-import com.security.authentication.dto.LoginRequest;
-import com.security.authentication.dto.RegisterRequest;
+import com.security.authentication.dto.*;
 import com.security.authentication.service.AuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.security.authentication.dto.LoginRequest;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -18,37 +16,69 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<String> register(@RequestBody RegisterRequest request) {
-        String message = authService.registerUser(request);
-        return ResponseEntity.ok(message);
+    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
+        try {
+            RegisterResponse response = authService.registerUser(request);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage(), "BAD_REQUEST"));
+        }
     }
 
     @GetMapping("/verify")
-    public ResponseEntity<String> verifyAccount(@RequestParam("token") String token) {
+    public ResponseEntity<?> verifyAccount(@RequestParam String token) {
         try {
-            String result = authService.verifyUserToken(token);
-            return ResponseEntity.ok(result);
+            String message = authService.verifyUserToken(token);
+
+            return ResponseEntity.ok(message);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage(), "INVALID_TOKEN"));
         }
     }
 
     @PostMapping("/login")
-    public ResponseEntity<String> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try {
-            String message = authService.loginUser(request);
-            return ResponseEntity.ok(message);
+            LoginInitialResponse response = authService.loginUser(request);
+            return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
-            return ResponseEntity.status(401).body(e.getMessage());
+
+            return ResponseEntity.status(401).body(new ErrorResponse(e.getMessage(), "UNAUTHORIZED"));
         }
     }
+
     @PostMapping("/verify-login")
-    public ResponseEntity<String> verifyLogin(@RequestBody com.security.authentication.dto.VerifyLoginRequest request) {
+    public ResponseEntity<?> verifyLogin(@RequestBody VerifyLoginRequest request) {
         try {
-            String message = authService.verifyLoginCode(request.getIdNumber(), request.getCode());
+            LoginSuccessResponse response = authService.verifyLoginCode(request.getIdNumber(), request.getCode());
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+
+            return ResponseEntity.status(401).body(new ErrorResponse(e.getMessage(), "UNAUTHORIZED"));
+        }
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        try {
+            String message = authService.initiatePasswordReset(request);
             return ResponseEntity.ok(message);
         } catch (RuntimeException e) {
-            return ResponseEntity.status(401).body(e.getMessage());
+
+            return ResponseEntity.status(404).body(new ErrorResponse(e.getMessage(), "NOT_FOUND"));
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        try {
+            String message = authService.completePasswordReset(request);
+            return ResponseEntity.ok(message);
+        } catch (RuntimeException e) {
+
+            return ResponseEntity.status(400).body(new ErrorResponse(e.getMessage(), "BAD_REQUEST"));
         }
     }
 }
