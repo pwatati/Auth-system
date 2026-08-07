@@ -1,6 +1,5 @@
 package com.security.authentication.config.Security;
 
-import com.security.authentication.model.Role;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -11,9 +10,9 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -30,14 +29,10 @@ public class JwtUtil {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
-    // 1. Generate Token from User Roles (Set<Role>)
-    public String generateToken(Long idNumber, String name, Set<Role> roles) {
-        List<String> roleNames = roles.stream()
-                .map(role -> {
-                    String roleName = role.getName().name();
-                    return roleName.startsWith("ROLE_") ? roleName : "ROLE_" + roleName;
-                })
-                .collect(Collectors.toList());
+    // 1. Generate Token from User Role String (e.g., "ROLE_USER")
+    public String generateToken(Long idNumber, String name, String role) {
+        String formattedRole = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+        List<String> roleNames = Collections.singletonList(formattedRole);
 
         return Jwts.builder()
                 .subject(String.valueOf(idNumber))

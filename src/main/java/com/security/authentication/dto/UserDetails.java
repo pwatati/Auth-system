@@ -8,12 +8,12 @@ public class UserDetails {
     private Long idNumber;
     private String name;
     private String email;
-    private Set<Role> roles;
+    private Set<String> roles;
 
     public UserDetails() {
     }
 
-    public UserDetails(Long idNumber, String name, String email, Set<Role> roles) {
+    public UserDetails(Long idNumber, String name, String email, Set<String> roles) {
         this.idNumber = idNumber;
         this.name = name;
         this.email = email;
@@ -44,11 +44,5 @@ public class UserDetails {
         this.email = email;
     }
 
-    public Set<Role> getRoles() {
-        return roles;
-    }
 
-    public void setRoles(Set<Role> roles) {
-        this.roles = roles;
-    }
 }

@@ -9,16 +9,15 @@ import org.springframework.stereotype.Service;
 import jakarta.transaction.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import java.util.Random;
 
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
     private final VerificationTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final LoginCodeRepository loginCodeRepository;
@@ -26,14 +25,12 @@ public class AuthService {
     private final JwtUtil jwtUtil;
 
     public AuthService(UserRepository userRepository,
-                       RoleRepository roleRepository,
                        VerificationTokenRepository tokenRepository,
                        PasswordEncoder passwordEncoder,
                        LoginCodeRepository loginCodeRepository,
                        PasswordResetCodeRepository resetCodeRepository,
                        JwtUtil jwtUtil) {
         this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.loginCodeRepository = loginCodeRepository;
@@ -41,6 +38,7 @@ public class AuthService {
         this.jwtUtil = jwtUtil;
     }
 
+    @Transactional
     public RegisterResponse registerUser(RegisterRequest request) {
         if (userRepository.existsById(request.getIdNumber())) {
             throw new RuntimeException("User with this ID Number already exists!");
@@ -51,14 +49,10 @@ public class AuthService {
         newUser.setName(request.getName());
         newUser.setEmail(request.getEmail());
         newUser.setPassword(passwordEncoder.encode(request.getPassword()));
+        // Automatically defaults to "ROLE_USER" inside the entity, or set explicitly:
+        newUser.setRoles("ROLE_USER");
 
-        // Assign default ROLE_USER to newly registered users
-        Role userRole = roleRepository.findByName(ERole.ROLE_USER)
-                .orElseThrow(() -> new RuntimeException("Error: Default Role ROLE_USER is not initialized in DB."));
-        Set<Role> roles = new HashSet<>();
-        roles.add(userRole);
-        newUser.setRoles(roles);
-
+        // Save immediately to MySQL
         userRepository.save(newUser);
 
         String tokenValue = UUID.randomUUID().toString();
@@ -135,9 +129,12 @@ public class AuthService {
         User user = userRepository.findById(idNumber)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
 
-        // Pass user.getRoles() to match Set<Role> expected by JwtUtil
+        // Pass roles as simple String to JWT generator
         String token = jwtUtil.generateToken(user.getIdNumber(), user.getName(), user.getRoles());
-        UserDetails userDto = new UserDetails(user.getIdNumber(), user.getName(), user.getEmail(), user.getRoles());
+
+        Set<String> roleNames = Collections.singleton(user.getRoles());
+
+        UserDetails userDto = new UserDetails(user.getIdNumber(), user.getName(), user.getEmail(), roleNames);
 
         return new LoginSuccessResponse("Verification successful. Welcome!", token, userDto);
     }

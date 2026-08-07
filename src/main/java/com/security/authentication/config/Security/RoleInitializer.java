@@ -6,8 +6,6 @@ import com.security.authentication.repository.RoleRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
-
 @Component
 public class RoleInitializer implements CommandLineRunner {
 
@@ -18,12 +16,11 @@ public class RoleInitializer implements CommandLineRunner {
     }
 
     @Override
-    public void run(String... args) {
-        Arrays.stream(ERole.values()).forEach(eRole -> {
+    public void run(String... args) throws Exception {
+        for (ERole eRole : ERole.values()) {
             if (roleRepository.findByName(eRole).isEmpty()) {
                 roleRepository.save(new Role(eRole));
-                System.out.println(">>> SEEDED ROLE: " + eRole);
             }
-        });
+        }
     }
 }

@@ -9,7 +9,6 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 public class UserDetailsImpl implements UserDetails {
 
@@ -35,15 +34,12 @@ public class UserDetailsImpl implements UserDetails {
     }
 
     public static UserDetailsImpl build(User user) {
-        List<GrantedAuthority> authorities = user.getRoles().stream()
-                .map(role -> {
-                    String roleName = role.getName().name();
-                    if (!roleName.startsWith("ROLE_")) {
-                        roleName = "ROLE_" + roleName;
-                    }
-                    return new SimpleGrantedAuthority(roleName);
-                })
-                .collect(Collectors.toList());
+        String roleName = user.getRoles();
+        if (roleName != null && !roleName.startsWith("ROLE_")) {
+            roleName = "ROLE_" + roleName;
+        }
+
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(roleName));
 
         return new UserDetailsImpl(
                 user.getIdNumber(),
@@ -70,6 +66,13 @@ public class UserDetailsImpl implements UserDetails {
 
     public String getEmail() {
         return email;
+    }
+
+    public String getRoles() {
+        if (authorities == null || authorities.isEmpty()) {
+            return "";
+        }
+        return authorities.iterator().next().getAuthority();
     }
 
     @Override
